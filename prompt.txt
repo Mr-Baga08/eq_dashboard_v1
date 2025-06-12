@@ -1,0 +1,258 @@
+Phase 1: Backend Foundation
+Prompt 1: Project Structure & Configuration
+"Let's start building the backend for our trading platform.
+
+Task: Create the initial FastAPI project structure and configuration files.
+
+Project Structure:
+Create the following directory and file structure:
+
+/app
+    /api
+    /core
+    /db
+    /models
+    /schemas
+    __init__.py
+    config.py
+    main.py
+.env.example
+requirements.txt
+File Contents:
+
+/app/config.py: Create a Settings class using Pydantic's BaseSettings to load the following variables from a .env file: DATABASE_URL, REDIS_URL, and JWT_SECRET_KEY.
+/app/main.py: Create a basic FastAPI app instance. For now, just include a root endpoint / that returns {"message": "Trading Platform API"}.
+.env.example: Create this file in the root directory with placeholder values for the variables in config.py.
+requirements.txt: List the essential Python packages: fastapi, uvicorn[standard], pydantic[email], pydantic-settings, SQLAlchemy, psycopg2-binary, redis, python-jose[cryptography], passlib[bcrypt], alembic, python-multipart, pyotp, and httpx."
+Prompt 2: Database Models (SQLAlchemy)
+"Now, let's define our database schema.
+
+Task: Create the SQLAlchemy models for our PostgreSQL database.
+
+File: Create a new file /app/models/models.py.
+
+Instructions:
+Inside models.py, define the SQLAlchemy ORM classes for the following tables as specified in the project plan. Use appropriate data types and define all relationships, foreign keys, and constraints.
+
+User (for platform admins)
+Client (for managed trading clients)
+Token (instrument master)
+Order
+Trade
+Position
+Margin
+Ensure the Client model has fields for encrypted credentials as outlined in the plan (e.g., encrypted_mofsl_api_key_interactive)."
+
+Prompt 3: Pydantic Schemas for API Validation
+"With the database models defined, we need Pydantic schemas for API data validation and serialization.
+
+Task: Create the Pydantic schemas.
+
+File: Create a new file /app/schemas/schemas.py.
+
+Instructions:
+Inside schemas.py, create Pydantic models that correspond to our database models. Follow these best practices:
+
+Create a Base model for common attributes (e.g., TokenBase).
+Create a Create model for data received when creating a new object (e.g., ClientCreate).
+Create a Read or main model for data sent back to the user, which includes fields like id and created_at (e.g., Client). This model should have orm_mode = True in its Config subclass.
+Create schemas for at least: User, Client, Token, Order, and Position."
+
+Prompt 4: Core Security Utilities
+"Security is critical. We need to handle password hashing for platform admins and encryption for client credentials.
+
+Task: Create a security utility module.
+
+File: Create a new file /app/core/security.py.
+
+Instructions:
+
+Password Hashing: Implement functions verify_password and get_password_hash using passlib with the bcrypt algorithm.
+Credential Encryption: Implement functions encrypt_data and decrypt_data using the cryptography.fernet library. These will be used to secure the MOFSL credentials before storing them in the clients table. The Fernet key should be loaded from an environment variable (FERNET_KEY).
+Update .env.example to include a placeholder for FERNET_KEY."
+Phase 2: Core Backend Logic
+Prompt 5: MOFSL API Wrapper (Authentication Only)
+"This is a critical step. We will build the service that communicates with the MOFSL API.
+
+Task: Create the initial MOFSL API Wrapper service, focusing only on authentication.
+
+File: Create a new file /app/core/mofsl_api_wrapper.py.
+
+Instructions:
+
+Create a class MOFSLApiWrapper.
+Implement an asynchronous method authenticate_client(client: schemas.Client).
+This method should:
+Take a client schema object as input.
+Decrypt the client's credentials (API Key, Secret, DOB, TOTP Secret) using the decrypt_data function from our security module.
+Generate a 6-digit TOTP code using the decrypted TOTP secret and the pyotp library.
+Make an asynchronous POST request to the MOFSL UAT authentication endpoint (https://openapi.motilaloswaluat.com/rest/login/v3/authdirectapi ) using the httpx library.   
+The request body should include userid, password (if needed), 2FA (DOB), and the generated totp code.   
+Handle success and error responses from the API. On success, it should return the AuthToken.   
+Include placeholder logic to manage the AuthToken's daily expiry."   
+Prompt 6: MOFSL API Wrapper (Read-Only Data)
+"Let's expand the API wrapper to fetch data.
+
+Task: Add methods to the MOFSLApiWrapper class for fetching portfolio and instrument data.
+
+File: /app/core/mofsl_api_wrapper.py
+
+Instructions:
+Add the following asynchronous methods to the MOFSLApiWrapper class. Each method should accept a client's AuthToken and other necessary parameters.
+
+get_positions(auth_token: str, client_code: str): Makes a POST request to the getposition UAT endpoint.   
+get_holdings(auth_token: str, client_code: str): Makes a POST request to the getdpholding UAT endpoint.   
+search_instruments(auth_token: str, exchange: str): Makes a POST request to the getscripsbyexchangename UAT endpoint.   
+These methods should handle making the authenticated request and returning the data portion of the JSON response."
+
+Prompt 7: MOFSL API Wrapper (Order Management)
+"Now, let's add the transactional order management functions to the wrapper.
+
+Task: Add methods for placing, modifying, and canceling orders to the MOFSLApiWrapper.
+
+File: /app/core/mofsl_api_wrapper.py
+
+Instructions:
+Add the following asynchronous methods to the MOFSLApiWrapper class.
+
+place_order(auth_token: str, order_details: schemas.OrderCreate): This method will take an authenticated token and an order details object. It will make a POST request to the placeorder UAT endpoint. It should return the uniqueorderid on success.   
+modify_order(...): Add a placeholder method for modifying an order, which would call the modifyorder endpoint.   
+cancel_order(auth_token: str, unique_order_id: str): This method will make a POST request to the cancelorder UAT endpoint.   
+Ensure you map the fields from our Pydantic schemas to the JSON payload required by the MOFSL API."
+
+Phase 3: Backend API Endpoints
+Prompt 8: Client Management API Endpoints
+"Let's create the API endpoints for managing clients.
+
+Task: Build the FastAPI router for client CRUD operations.
+
+File: Create a new file /app/api/clients.py.
+
+Instructions:
+
+Create a new APIRouter.
+Implement the POST /admin/clients endpoint. This endpoint should:
+Accept a schemas.ClientCreate payload.
+Use the encrypt_data utility to encrypt all sensitive MOFSL credentials before saving them to the database.
+Save the new client record.
+Implement the GET /admin/clients endpoint to list all clients. Ensure you do not return the encrypted credential fields.
+In /app/main.py, include this new router in your main FastAPI app."
+Prompt 9: Data & Portfolio API Endpoints
+"Now, create the endpoints the frontend will use to get instrument and portfolio data.
+
+Task: Build the FastAPI routers for token search and portfolio details.
+
+Files: Create /app/api/tokens.py and /app/api/portfolio.py.
+
+Instructions:
+
+In /app/api/tokens.py:
+Create the GET /api/v1/tokens/search endpoint.
+It should take q (search query) and exchange as query parameters.
+It will need to authenticate a master/admin client, call the search_instruments method from our wrapper, and then filter the results based on the search query q.
+Implement Redis caching for the results from search_instruments to avoid repeated API calls to MOFSL.
+In /app/api/portfolio.py:
+Create the GET /api/v1/clients/{client_id}/portfolio endpoint.
+This endpoint will fetch the specified client from the DB, authenticate them using the wrapper, and then call the get_positions and get_holdings methods to build a comprehensive portfolio response.
+In /app/main.py, include these new routers."
+Prompt 10: Order & Exit API Endpoints
+"This is the final and most important set of backend endpoints for executing trades.
+
+Task: Build the FastAPI routers for order management and exit operations.
+
+File: Create /app/api/orders.py.
+
+Instructions:
+
+Create a new APIRouter.
+Implement the POST /api/v1/orders/execute-all endpoint. This is for the main dashboard's batch execution. It should:
+Accept a payload containing trade parameters and a list of client_orders (with client_id and quantity).
+Iterate through the list. For each client order with quantity > 0:
+Fetch the client from the DB.
+Authenticate the client using the wrapper.
+Call the place_order method from the wrapper.
+Return a detailed response showing the status (success/failure) for each individual order placement attempt.
+Implement the POST /api/v1/tokens/{token_mofsl_id}/exit-all endpoint for the token exit page, following similar logic to place opposing orders.
+In /app/main.py, include this router."
+Phase 4: Frontend Development
+Note: For the frontend, you will need to have Node.js and npm/yarn installed. You can run the setup commands yourself or ask the AI to provide them.
+
+Prompt 11: Frontend Project Setup
+"Let's start the frontend.
+
+Task: Provide the commands and configuration files to set up our React project.
+
+Instructions:
+
+Provide the command to create a new React project named trading-dashboard-ui using Vite and the TypeScript template.
+Provide the commands to install the necessary dependencies: tailwindcss, postcss, autoprefixer, zustand, and axios.
+Provide the content for the tailwind.config.js and postcss.config.js files to complete the Tailwind CSS integration.
+Create a basic file structure inside /src: /components, /pages, /services, /store."
+Prompt 12: Frontend State & API Service
+"Now, set up the global state management and the API service layer.
+
+Task: Create the Zustand store and the Axios API client.
+
+Instructions:
+
+File /src/services/apiClient.ts: Create a file that exports a configured axios instance. Set the baseURL to http://localhost:8000 (or your backend's address).
+File /src/store/portfolioStore.ts: Create a basic Zustand store. It should hold state for clients, tokens, and loadingStatus. Include initial actions like fetchClients that will call our backend."
+Prompt 13: Frontend Component - Trade Configuration Panel
+"Let's build the first piece of the UI.
+
+Task: Create the React component for the top trade configuration panel.
+
+File: Create /src/components/TradeConfigPanel.tsx.
+
+Instructions:
+Create a React component that includes:
+
+A searchable dropdown component for "Select Symbol". When the user types, it should call the /api/v1/tokens/search backend endpoint via the apiClient.
+Simple dropdowns for "Select Market" (NSE, BSE), "Trade Type" (Delivery, Intraday, MTF), and "Order Type" (Market).
+Use Tailwind CSS for styling. The component should manage its own state for the selected values."
+Prompt 14: Frontend Component - Client Table
+"Now for the main part of the dashboard.
+
+Task: Create the React component for the clients table.
+
+File: Create /src/components/ClientsTable.tsx.
+
+Instructions:
+
+The component should fetch client data from the backend using the Zustand store's fetchClients action.
+It should render a table with the following columns: "Client Name", "Available Funds", "P&L", and "Quantity".
+The "Quantity" column must contain a number input field for each client.
+Use Tailwind CSS for styling, including hover effects on rows."
+Prompt 15: Assembling the Dashboard & Execution Logic
+"Let's put the dashboard page together and make it functional.
+
+Task: Create the main dashboard page and implement the trade execution logic.
+
+File: Create /src/pages/Dashboard.tsx.
+
+Instructions:
+
+This component will render the TradeConfigPanel and the ClientsTable.
+Add an "Execute All" button below the table.
+Implement the onClick handler for the "Execute All" button. This function should:
+Gather the selected trade parameters from the TradeConfigPanel.
+Gather the quantities for each client from the ClientsTable.
+Construct the payload for the /api/v1/orders/execute-all endpoint.
+Call the backend API using our apiClient.
+Handle the response, displaying a success or error notification to the user."
+Phase 5: Real-Time Integration
+Prompt 16: WebSocket Integration
+"The final core feature is real-time updates.
+
+Task: Implement WebSocket integration on both the backend and frontend.
+
+Instructions:
+
+Backend (/app/api/websockets.py):
+Create a FastAPI WebSocket endpoint at /ws/updates.
+For this MVP, create a simple loop that await asyncio.sleep(5) and then sends a JSON message with a random P&L update, like {"type": "pl_update", "client_id": "some_id", "new_pl": 550.75}. This simulates real-time data.
+Frontend (/src/hooks/usePortfolioSocket.ts):
+Create a custom React hook that establishes a WebSocket connection to the backend.
+It should listen for incoming messages.
+When a pl_update message is received, it should call an action in the Zustand store to update the P&L for the specific client in the global state.
+Integrate the hook into the Dashboard.tsx page so that the P&L values in the table update automatically."
